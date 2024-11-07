@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CT Scan Images</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { display: flex; flex-direction: column; align-items: center; }
+        .main { display: flex; flex-direction: row; }
+        .slider { margin: 10px; width: 300px; }
+        .slider label { display: block; margin-top: 10px; }
+        #files_container { margin-right: 10px; }
+        .canvas { border: 1px solid black; }
+        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 1.5em; display: none; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>CT Scan Images</h1>
+    <div class="slider">
+        <label for="binCount">Bin Count</label>
+        <input type="range" id="binCount" min="2" max="20" value="10" step="1" />
+        <label for="minThreshold">Min Threshold</label>
+        <input type="range" id="minThreshold" min="0" max="100" value="0" />
+        <label for="maxThreshold">Max Threshold</label>
+        <input type="range" id="maxThreshold" min="0" max="1000" value="300" />
+    </div>
+    <hr />
+    <div id="loading">Loading...</div>
+    <div class="main">
+        <div id="files_container">
+            <select id="files" name="file" size="10" multiple="multiple"></select>
+        </div>
+        <div class="canvas">
+            <svg viewBox="-5 -10 270 270" width="500" height="500"></svg>
+        </div>
+    </div>
+</div>
+
+<script>
+    const svg = d3.select("svg");
+    const path = d3.geoPath();
+    let currentBinCount = document.querySelector("#binCount").value;
+    let currentMin = document.querySelector("#minThreshold").value;
+    let currentMax = document.querySelector("#maxThreshold").value;
+
+    let minValue, maxValue;
+
+    function plot_contour(fileNumber) {
+        document.getElementById("loading").style.display = "block"; // Show loading spinner
+
+        d3.json("dicomData/" + fileNumber).then(data => {
+            d3.select("svg").selectAll("*").remove();
+            document.getElementById("loading").style.display = "none"; // Hide loading spinner
+
+            // Define grid dimensions
+            let m = 256, n = 256;
+
+            // Convert 2D array data into a 1D array
+            let values_density = [];
+            data.forEach(col => col.forEach(d => values_density.push(+d)));
+
+            const min_max = d3.extent(values_density, d => d);
+            minValue = min_max[0];
+            maxValue = min_max[1];
+
+            document.querySelector("#minThreshold").min = minValue;
+            document.querySelector("#minThreshold").max = maxValue;
+            document.querySelector("#minThreshold").value = minValue;
+
+            document.querySelector("#maxThreshold").min = minValue;
+            document.querySelector("#maxThreshold").max = maxValue;
+            document.querySelector("#maxThreshold").value = maxValue;
+
+            function draw(binCount, minThreshold, maxThreshold) {
+                const thresholds = d3.range(minThreshold, maxThreshold, (maxThreshold - minThreshold) / binCount);
+
+                const colors = d3.scaleSequential(d3.interpolateTurbo)  // Turbo color scheme closely resembles medical imaging
+                    .domain([minThreshold, maxThreshold]);
+
+                let contours = d3.contours()
+                    .size([m, n])
+                    .thresholds(thresholds)(values_density);
+
+                svg.append("g")
+                    .attr("class", "contours")
+                    .selectAll("path")
+                    .data(contours)
+                    .enter()
+                    .append("path")
+                    .attr("d", d => path(d))
+                    .attr("stroke", "black")
+                    .attr("stroke-width", ".1px")
+                    .attr("stroke-linejoin", "round")
+                    .attr("fill", d => colors(d.value));
+            }
+
+            draw(currentBinCount, currentMin, currentMax);
+
+            document.querySelector("#binCount").addEventListener("input", updatePlot);
+            document.querySelector("#minThreshold").addEventListener("input", updatePlot);
+            document.querySelector("#maxThreshold").addEventListener("input", updatePlot);
+
+            function updatePlot() {
+                currentBinCount = document.querySelector("#binCount").value;
+                currentMin = document.querySelector("#minThreshold").value;
+                currentMax = document.querySelector("#maxThreshold").value;
+                draw(currentBinCount, currentMin, currentMax);
+            }
+        });
+    }
+
+    function filesList() {
+        const files_data = [
+            "brain_001.dcm.json", "brain_002.dcm.json", "brain_003.dcm.json", "brain_004.dcm.json",
+            "brain_005.dcm.json", "brain_006.dcm.json", "brain_007.dcm.json", "brain_008.dcm.json",
+            "brain_009.dcm.json", "brain_010.dcm.json", "brain_011.dcm.json", "brain_012.dcm.json",
+            "brain_013.dcm.json", "brain_014.dcm.json", "brain_015.dcm.json", "brain_016.dcm.json",
+            "brain_017.dcm.json", "brain_018.dcm.json", "brain_019.dcm.json", "brain_020.dcm.json"
+        ];
+        const selectElement = d3.select("#files");
+        selectElement
+            .selectAll("option")
+            .data(files_data)
+            .enter()
+            .append("option")
+            .text(d => d);
+
+        selectElement.on("change", () => {
+            const selectedOption = selectElement.property("value");
+            plot_contour(selectedOption);
+        });
+
+        selectElement.attr("size", files_data.length);
+    }
+
+    filesList();
+    plot_contour("brain_001.dcm.json");
+</script>
+</body>
+</html>
